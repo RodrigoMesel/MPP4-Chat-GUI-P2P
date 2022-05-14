@@ -1,4 +1,5 @@
 from datetime import datetime
+from importlib.resources import path
 from tkinter import *
 from socket import *
 from threading import *
@@ -6,10 +7,15 @@ from tkinter import filedialog
 from pygame import mixer
 from PIL import Image, ImageTk
 import os
+from time import sleep
+
 
 class GUI:
     def __init__(self, largura, altura, name):
         self.window = Tk()
+
+        self.FILE_INDICATOR = '<F!L&_!$_(0m!nG>'
+        self.BUFFER_SIZE = 1024
 
         self.canva = Canvas(self.window, width= largura, height= altura)
         self.canva.grid(columnspan= 3)
@@ -41,12 +47,12 @@ class GUI:
 
 
     def createWidgets(self):
-        self.txt_area       = Text(self.canva, border=1, width= 125, height= 35)
-        self.txt_field      = Entry(self.canva, width=85, border=1, bg= '#FFF')
-        self.send_button    = Button(self.canva, text='Send', width= 20 , padx= 20, command=self.send)
-        self.clear_button   = Button(self.canva, text='Clear', width= 20, padx= 20, command=self.clear)
+        self.txt_area       = Text(self.canva, border=0, width= 80, height= 35)
+        self.txt_field      = Entry(self.canva, width=50, border=1, bg= '#FFF')
+        self.send_button    = Button(self.canva, text='Send', width= 10 , padx= 20, command=self.send)
+        self.clear_button   = Button(self.canva, text='Clear', width= 10, padx= 20, command=self.clear)
         self.getFile_button = Button(self.canva, text='File', width= 10, padx= 10, command=self.getFile)
-
+        
         self.window.bind('<Return>', self.send)
         self.txt_area.config(background= "#A0e6a4")
 
@@ -93,32 +99,77 @@ class GUI:
         self.time = datetime.now()
         self.time = self.time.strftime('%H:%M, %d/%m/%Y')
         self.msg = self.txt_field.get()
-        self.completeMessage = self.msg + '\n' + self.name + ' - ' + self.time + '\n'
-
-        #mandando no buffer a mensagem sem o nome e a hora
-        self.soc.sendto(bytes(self.msg, 'utf-8'), self.addr_user_fixed) 
-        #mandando no buffer a mensagem com nome e hora
-        self.soc.sendto(bytes(self.completeMessage, 'utf-8'), self.addr_user_fixed)
-
-        #se alguma coisa foi digitada e mandada, aparece na tela
         if self.msg != "":
+            self.completeMessage = self.name + ' - ' + self.time + ':\n' + self.msg + '\n\n'
+            #mandando no buffer a mensagem com nome e hora
+            self.soc.sendto(bytes(self.completeMessage, 'utf-8'), self.addr_user_fixed)
             self.txt_area.insert(END, self.completeMessage)
             self.txt_field.delete(0, END)
-
 
     def receive(self):
         while True:
 
-            #recebe a mensagem sem data e hora
-            self.msgRecv, self.addr = self.soc.recvfrom(1024)
             #recebe a mensagem com data e hora
             self.msgComplRecv, self.addr = self.soc.recvfrom(1024)
-            #decodifica elas
-            self.msgRecv = self.msgRecv.decode('utf-8')
+            #decodifica ela
             self.msgComplRecv = self.msgComplRecv.decode('utf-8')
             #Se tiver mensagem, bota na tela
-            if self.msgRecv != "":
+            # começa a receber o arquivo
+            if self.msgComplRecv == self.FILE_INDICATOR:
+                print('here')
+
+                self.recvFileLock.acquire()
+
+                senderName, senderTime = self.soc.recv(self.BUFFER_SIZE).decode('utf-8').split('<@>')
+                self.txt_area.insert(END, senderName + ' - ' + senderTime + ':\n')
+
+                file_path, file_size = self.soc.recv(self.BUFFER_SIZE).decode('utf-8').split('<@>')
+                file_size = int(file_size)
+
+                # começar a receber o arquivo
+                with open(file_path, 'wb') as f:
+
+                    while file_size > 0:
+                        print(file_size)
+                        data = self.soc.recv(min(self.BUFFER_SIZE, file_size))
+                        file_size -= self.BUFFER_SIZE
+
+                        f.write(data)
+                f.close()
+
+                self.recvFileLock.release()
+                print("recebido")
+
+                # analisar o formato do arquivo
+                file_format = file_path.split('.')[-1]
+
+                # verificar se é arqivo de audio
+                if file_format in ['mp3', 'wav', 'ogg']:
+                    audio = mixer.Sound(path)
+                    self.audio_bank[path] = audio
+
+                    
+                    self.txt_area.insert(END, f"$AUDIO: {file_path.split('/')[-1]}")
+                
+                elif file_format == 'mp4':
+                    self.txt_area.insert(END, f"$VIDEO: {file_path.split('/')[-1]}")
+
+                else:
+                    try:
+                        img = Image.open(file_path)
+
+                        miniature_img = img.resize((325, (325*img.height)//img.width), Image.ANTIALIAS)
+                        my_img = ImageTk.PhotoImage(miniature_img)
+                        self.img_bank.append(my_img)
+                        self.txt_area.image_create(END, image=self.img_bank[-1])
+                        self.txt_area.insert(END, "\n\n")
+
+                    except:
+                        self.txt_area.insert(END, f"$FILE: {file_path.split('/')[-1]}")
+                
+            else:
                 self.txt_area.insert(END, self.msgComplRecv)
+
 
     def clear(self):
         self.txt_area.delete(1.0, END)
@@ -129,7 +180,12 @@ class GUI:
         # verificar se arquivo não vazio foi selecionado
         if path == '':
             return
-        
+    
+
+        self.time = datetime.now()
+        self.time = self.time.strftime('%H:%M, %d/%m/%Y')
+        self.txt_area.insert(END, self.name + ' - ' + self.time + ':\n')
+
         # analisar o formato do arquivo
         file_format = path.split('.')[-1]
 
@@ -152,25 +208,53 @@ class GUI:
                 my_img = ImageTk.PhotoImage(miniature_img)
                 self.img_bank.append(my_img)
                 self.txt_area.image_create(END, image=self.img_bank[-1])
+                self.txt_area.insert(END, "\n\n")
 
             except:
                 self.txt_area.insert(END, f"$FILE: {path.split('/')[-1]}")
         
-        self.time = datetime.now()
-        self.time = self.time.strftime('%H:%M, %d/%m/%Y')
-        self.txt_area.insert(END, f'\n' + self.name + ' - ' + self.time + '\n')
+
+
+        # indicar ao outro peer que um arquivo será enviado
+        self.soc.sendto(bytes(self.FILE_INDICATOR, 'utf-8'), self.addr_user_fixed)
+        
+        print('enviando')
         thr = Thread(target= self.sendFile, args= (path,), daemon= True)
         thr.start()
 
-    def sendFile(self, file_path):
-        self.sendFileLock.acquire()
+    def sendFile(self, file_path : str):
 
         file_size = os.path.getsize(file_path)
+        path = file_path.split('/')[-1]
+        contador = 0 
 
-        
+        self.time = datetime.now()
+        self.time = self.time.strftime('%H:%M, %d/%m/%Y')
 
+        self.soc.sendto(f"{self.name}<@>{self.time}".encode('utf-8'),self.addr_user_fixed)
         
+        self.sendFileLock.acquire()
+
+        # enviar nome e tamnho do arquivo
+        self.soc.sendto(f"{path}<@>{file_size}".encode('utf-8'), self.addr_user_fixed)
+
+        # enviar arquivo
+        with open(file_path, "rb") as f:
+            bytes_read = f.read(self.BUFFER_SIZE)
+            contador+= 1
+
+            while bytes_read:
+                print()
+                self.soc.sendto(bytes_read, self.addr_user_fixed)
+                # ler os bytes do arquivo
+                bytes_read = f.read(self.BUFFER_SIZE)
+                contador += 1
+            print("Enviou tudo")
         
+        f.close()
+        self.sendFileLock.release()
+        print('arquivo enviado')
+               
 
 
 if __name__ == '__main__':
