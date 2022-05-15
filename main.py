@@ -1,5 +1,5 @@
 from datetime import datetime
-from importlib.resources import path
+from time import sleep
 from tkinter import *
 from socket import *
 from threading import *
@@ -7,7 +7,7 @@ from tkinter import filedialog
 from pygame import mixer
 from PIL import Image, ImageTk
 import os
-from time import sleep
+import tqdm
 
 
 class GUI:
@@ -15,7 +15,7 @@ class GUI:
         self.window = Tk()
 
         self.FILE_INDICATOR = '<F!L&_!$_(0m!nG>'
-        self.BUFFER_SIZE = 1024
+        self.BUFFER_SIZE = 4096
 
         self.canva = Canvas(self.window, width= largura, height= altura)
         self.canva.grid(columnspan= 3)
@@ -81,7 +81,6 @@ class GUI:
         self.list_addr = self.list_addr.split(', ')
         self.list_addr[1] = int(self.list_addr[1])
         self.tuple_addr = tuple(self.list_addr)
-        # ('0.0.0.0', 8271)
 
         return self.tuple_addr
 
@@ -99,12 +98,20 @@ class GUI:
         self.time = datetime.now()
         self.time = self.time.strftime('%H:%M, %d/%m/%Y')
         self.msg = self.txt_field.get()
-        if self.msg != "":
+        if self.msg == "":
+            return
+        elif self.msg[0:5] == '!open':
+            try:
+                os.startfile(os.getcwd()+'\\'+ self.msg[6:])
+            except:
+                print('FUDEU')
+        else:
             self.completeMessage = self.name + ' - ' + self.time + ':\n' + self.msg + '\n\n'
             #mandando no buffer a mensagem com nome e hora
             self.soc.sendto(bytes(self.completeMessage, 'utf-8'), self.addr_user_fixed)
             self.txt_area.insert(END, self.completeMessage)
-            self.txt_field.delete(0, END)
+
+        self.txt_field.delete(0, END)
 
     def receive(self):
         while True:
@@ -116,7 +123,6 @@ class GUI:
             #Se tiver mensagem, bota na tela
             # começa a receber o arquivo
             if self.msgComplRecv == self.FILE_INDICATOR:
-                print('here')
 
                 self.recvFileLock.acquire()
 
@@ -126,27 +132,34 @@ class GUI:
                 file_path, file_size = self.soc.recv(self.BUFFER_SIZE).decode('utf-8').split('<@>')
                 file_size = int(file_size)
 
+                # create progressbar 
+                progress_bar = tqdm.tqdm(
+                    range(file_size), 
+                    f"Receiving .{file_path.split('.')[-1]} file", 
+                    unit="B", 
+                    unit_scale=True, 
+                    unit_divisor=1024)
+
                 # começar a receber o arquivo
                 with open(file_path, 'wb') as f:
 
                     while file_size > 0:
-                        print(file_size)
-                        data = self.soc.recv(min(self.BUFFER_SIZE, file_size))
+                        data = self.soc.recv(self.BUFFER_SIZE)
                         file_size -= self.BUFFER_SIZE
 
                         f.write(data)
+                        progress_bar.update(len(data))
                 f.close()
 
                 self.recvFileLock.release()
-                print("recebido")
 
                 # analisar o formato do arquivo
                 file_format = file_path.split('.')[-1]
 
                 # verificar se é arqivo de audio
                 if file_format in ['mp3', 'wav', 'ogg']:
-                    audio = mixer.Sound(path)
-                    self.audio_bank[path] = audio
+                    audio = mixer.Sound(file_path)
+                    self.audio_bank[file_path] = audio
 
                     
                     self.txt_area.insert(END, f"$AUDIO: {file_path.split('/')[-1]}")
@@ -226,7 +239,6 @@ class GUI:
 
         file_size = os.path.getsize(file_path)
         path = file_path.split('/')[-1]
-        contador = 0 
 
         self.time = datetime.now()
         self.time = self.time.strftime('%H:%M, %d/%m/%Y')
@@ -238,22 +250,30 @@ class GUI:
         # enviar nome e tamnho do arquivo
         self.soc.sendto(f"{path}<@>{file_size}".encode('utf-8'), self.addr_user_fixed)
 
+        # create progressbar 
+        progress_bar = tqdm.tqdm(
+            range(file_size), 
+            f"Sending .{path.split('.')[-1]} file", 
+            unit="B", 
+            unit_scale=True, 
+            unit_divisor=1024)
+
         # enviar arquivo
         with open(file_path, "rb") as f:
-            bytes_read = f.read(self.BUFFER_SIZE)
-            contador+= 1
-
-            while bytes_read:
-                print()
-                self.soc.sendto(bytes_read, self.addr_user_fixed)
+            bytes = f.read(self.BUFFER_SIZE)
+            # atualizar progress bar
+            progress_bar.update(len(bytes))
+            while bytes:
+                sleep(0.0005)
+                self.soc.sendto(bytes, self.addr_user_fixed)
                 # ler os bytes do arquivo
-                bytes_read = f.read(self.BUFFER_SIZE)
-                contador += 1
-            print("Enviou tudo")
+                bytes = f.read(self.BUFFER_SIZE)
+                # atualizar progress bar
+                progress_bar.update(len(bytes))
         
         f.close()
         self.sendFileLock.release()
-        print('arquivo enviado')
+        
                
 
 
