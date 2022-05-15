@@ -4,7 +4,6 @@ from tkinter import *
 from socket import *
 from threading import *
 from tkinter import filedialog
-from pygame import mixer
 from PIL import Image, ImageTk
 import os
 import tqdm
@@ -32,11 +31,6 @@ class GUI:
 
         #listas
         self.img_bank = list()
-        self.audio_bank = dict()
-        self.video_bank = dict()
-
-        mixer.init()
-        self.audio_player = mixer.Channel(0)
 
         #threadSend = Thread(target= self.send, daemon= True)
         threadRecv = Thread(target= self.receive, daemon= True)
@@ -84,7 +78,6 @@ class GUI:
 
         return self.tuple_addr
 
-
     def user_connect(self, s):
         self.addr_user = s.recv(1024)
         self.addr_this = s.recv(1024)
@@ -104,7 +97,7 @@ class GUI:
             try:
                 os.startfile(os.getcwd()+'\\'+ self.msg[6:])
             except:
-                print('FUDEU')
+                print("Deu ruim")
         else:
             self.completeMessage = self.name + ' - ' + self.time + ':\n' + self.msg + '\n\n'
             #mandando no buffer a mensagem com nome e hora
@@ -117,7 +110,7 @@ class GUI:
         while True:
 
             #recebe a mensagem com data e hora
-            self.msgComplRecv, self.addr = self.soc.recvfrom(1024)
+            self.msgComplRecv, self.addr = self.soc.recvfrom(4096)
             #decodifica ela
             self.msgComplRecv = self.msgComplRecv.decode('utf-8')
             #Se tiver mensagem, bota na tela
@@ -157,15 +150,11 @@ class GUI:
                 file_format = file_path.split('.')[-1]
 
                 # verificar se é arqivo de audio
-                if file_format in ['mp3', 'wav', 'ogg']:
-                    audio = mixer.Sound(file_path)
-                    self.audio_bank[file_path] = audio
-
-                    
-                    self.txt_area.insert(END, f"$AUDIO: {file_path.split('/')[-1]}")
+                if file_format in ['mp3', 'wav', 'ogg']:                   
+                    self.txt_area.insert(END, f"$AUDIO: {file_path.split('/')[-1]}\n\n")
                 
                 elif file_format == 'mp4':
-                    self.txt_area.insert(END, f"$VIDEO: {file_path.split('/')[-1]}")
+                    self.txt_area.insert(END, f"$VIDEO: {file_path.split('/')[-1]}\n\n")
 
                 else:
                     try:
@@ -178,7 +167,7 @@ class GUI:
                         self.txt_area.insert(END, "\n\n")
 
                     except:
-                        self.txt_area.insert(END, f"$FILE: {file_path.split('/')[-1]}")
+                        self.txt_area.insert(END, f"$FILE: {file_path.split('/')[-1]}\n\n")
                 
             else:
                 self.txt_area.insert(END, self.msgComplRecv)
@@ -203,15 +192,11 @@ class GUI:
         file_format = path.split('.')[-1]
 
         # verificar se é arqivo de audio
-        if file_format in ['mp3', 'wav', 'ogg']:
-            audio = mixer.Sound(path)
-            self.audio_bank[path] = audio
-
-            
-            self.txt_area.insert(END, f"$AUDIO: {path.split('/')[-1]}")
+        if file_format in ['mp3', 'wav', 'ogg']:           
+            self.txt_area.insert(END, f"$AUDIO: {path.split('/')[-1]}\n\n")
         
         elif file_format == 'mp4':
-            self.txt_area.insert(END, f"$VIDEO: {path.split('/')[-1]}")
+            self.txt_area.insert(END, f"$VIDEO: {path.split('/')[-1]}\n\n")
 
         else:
             try:
@@ -224,7 +209,7 @@ class GUI:
                 self.txt_area.insert(END, "\n\n")
 
             except:
-                self.txt_area.insert(END, f"$FILE: {path.split('/')[-1]}")
+                self.txt_area.insert(END, f"$FILE: {path.split('/')[-1]}\n\n")
         
 
 
@@ -274,9 +259,7 @@ class GUI:
         f.close()
         self.sendFileLock.release()
         
-               
-
-
+            
 if __name__ == '__main__':
     name = input("Digite o nome do usuário: ")
     interface = GUI(600,800, name)
